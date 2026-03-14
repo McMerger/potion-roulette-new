@@ -316,7 +316,37 @@ footer {
     100% { transform: translate(1px, -2px) rotate(-1deg); }
 }
 
-.shake {
-    animation: shake 0.5s;
-    animation-iteration-count: infinite;
+#ability-bar {
+    position: absolute;
+    bottom: 160px;
+    display: flex;
+    gap: 1rem;
+    pointer-events: auto;
+}
+
+.ability-btn {
+    animation: glow-pulse 2s infinite alternate;
+}
+
+@keyframes glow-pulse {
+    from { box-shadow: 0 0 5px var(--shield-color); }
+    to { box-shadow: 0 0 20px var(--shield-color); }
+}
+
+.pulsing-poison {
+    animation: poison-border 1.5s infinite;
+}
+
+@keyframes poison-border {
+    0% { border-color: var(--text-muted); }
+    50% { border-color: var(--poison-color); box-shadow: inset 0 0 10px var(--poison-color); }
+    100% { border-color: var(--text-muted); }
+}
+
+.pulsing-vignette-poison {
+    box-shadow: inset 0 0 100px rgba(68, 204, 68, 0.3) !important;
+}
+
+.pulsing-vignette-damage {
+    box-shadow: inset 0 0 100px rgba(204, 0, 0, 0.4) !important;
 }

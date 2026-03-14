@@ -63,6 +63,8 @@ class GameUI {
     }
 
     handlePrimaryAction() {
+        if (this.game.players[this.game.activePlayerIndex].isAi && this.game.phase !== Phase.CHOOSE) return;
+        
         switch(this.game.phase) {
             case Phase.PASS_TO_ACTIVE:
                 this.startTurn();
@@ -89,7 +91,22 @@ class GameUI {
         this.game.rollIngredients();
         this.game.phase = Phase.CRAFT;
         this.log(`--- Turn ${this.game.turnNumber} : ${this.game.players[this.game.activePlayerIndex].name} ---`, 'chaos');
+        
+        // Every 3 turns, roll for an ability
+        if (this.game.turnNumber % this.game.TURNS_FOR_ABILITY === 0) {
+            const ability = this.game.rollAbility();
+            this.log(`${this.game.players[this.game.activePlayerIndex].name} gained ${ability}!`, 'shield');
+        }
+
         this.updateUI();
+        
+        if (this.game.players[this.game.activePlayerIndex].isAi) {
+            setTimeout(() => {
+                this.game.aiCraft();
+                this.log(`AI ${this.game.players[this.game.activePlayerIndex].name} finished crafting.`);
+                this.updateUI();
+            }, 1000);
+        }
     }
 
     updateUI() {
@@ -112,18 +129,22 @@ class GameUI {
                 this.instructions.textContent = `${activePlayer.name.toUpperCase()}: BREW YOUR FATE`;
                 this.primaryBtn.textContent = "SEAL POTIONS";
                 this.primaryBtn.disabled = this.game.selectedIndexes.length < 4;
-                this.secondaryBtn.classList.remove('hidden');
-                this.secondaryBtn.textContent = "CLEAR";
                 this.renderIngredients();
                 break;
             case Phase.PASS_TO_CHOOSER:
                 this.instructions.textContent = `Vials are ready. Pass back to ${opponent.name}.`;
                 this.primaryBtn.textContent = "REVEAL CHOICES";
+                if (opponent.isAi) {
+                    setTimeout(() => this.handlePrimaryAction(), 1000);
+                }
                 break;
             case Phase.CHOOSE:
                 this.instructions.textContent = `${opponent.name.toUpperCase()}: CHOOSE YOUR POISON`;
                 this.primaryBtn.classList.add('hidden');
                 this.renderPotions();
+                if (opponent.isAi) {
+                    setTimeout(() => this.choosePotion(this.game.aiChoose()), 1500);
+                }
                 break;
             case Phase.GAME_OVER:
                 this.instructions.textContent = this.game.winner;
@@ -131,6 +152,45 @@ class GameUI {
                 break;
         }
         this.updateHUD();
+        this.renderAbilities();
+    }
+
+    renderAbilities() {
+        // Find or create ability container
+        let container = document.getElementById('ability-bar');
+        if (!container) {
+            container = document.createElement('div');
+            container.id = 'ability-bar';
+            document.getElementById('interaction-area').appendChild(container);
+        }
+        
+        container.innerHTML = '';
+        const activePlayer = this.game.players[this.game.activePlayerIndex];
+        const opponent = this.game.players[1 - this.game.activePlayerIndex];
+        
+        // Show abilities for the current CHOOSER if in choose phase, or CRAFTER if in craft phase
+        const showingPlayer = (this.game.phase === Phase.CHOOSE) ? opponent : (this.game.phase === Phase.CRAFT ? activePlayer : null);
+        
+        if (showingPlayer && !showingPlayer.isAi) {
+            showingPlayer.abilities.forEach(ability => {
+                const btn = document.createElement('button');
+                btn.className = 'btn-secondary ability-btn';
+                btn.textContent = `USE ${ability}`;
+                btn.onclick = () => this.useAbility(ability);
+                container.appendChild(btn);
+            });
+        }
+    }
+
+    useAbility(ability) {
+        const res = this.game.useAbility(ability);
+        if (res.success) {
+            this.log(`${this.game.players[this.activePlayerIndex]?.name || 'You'} used ${ability}!`, 'shield');
+            if (ability === "PEEK") {
+                this.log(`Peek revealed Potion ${res.peekedIndex === 0 ? 'A' : 'B'} contains ${res.content.map(i => this.getIngredientName(i)).join(' + ')}`);
+            }
+            this.updateUI();
+        }
     }
 
     renderIngredients() {
@@ -145,12 +205,10 @@ class GameUI {
             btn.textContent = this.getIngredientName(ing);
             btn.style.borderColor = this.getIngredientColor(ing);
             
-            if (!isSelected) {
+            if (!isSelected && this.game.phase === Phase.CRAFT && !this.game.players[this.game.activePlayerIndex].isAi) {
                 btn.onclick = () => {
                     if (this.game.selectIngredient(idx)) this.updateUI();
                 };
-            } else {
-                btn.disabled = true;
             }
             shelf.appendChild(btn);
         });
@@ -164,8 +222,22 @@ class GameUI {
         [0, 1].forEach(idx => {
             const btn = document.createElement('button');
             btn.className = 'potion-card';
-            btn.textContent = `POTION ${idx === 0 ? 'A' : 'B'}\n???`;
-            btn.onclick = () => this.choosePotion(idx);
+            
+            let display = `POTION ${idx === 0 ? 'A' : 'B'}`;
+            if (this.game.peekedIndex === idx) {
+                const content = this.game.brewedPotions[idx];
+                display += `\n(${this.getIngredientName(content[0])} + ${this.getIngredientName(content[1])})`;
+                btn.style.borderColor = 'white';
+            } else {
+                display += `\n???`;
+            }
+            
+            btn.textContent = display;
+            
+            const opponent = this.game.players[1 - this.game.activePlayerIndex];
+            if (!opponent.isAi) {
+                btn.onclick = () => this.choosePotion(idx);
+            }
             choices.appendChild(btn);
         });
     }
@@ -285,21 +357,25 @@ class GameUI {
             if (res.blocked) {
                 this.log(`${this.game.players[result.target].name}'s Shield absorbed the blow!`, 'shield');
                 this.flashScreen('gold');
+                this.spawnParticles('shield', result.target);
             } else {
                 this.log(`${this.game.players[result.target].name} suffers ${result.value} damage from ${result.source}!`, 'fire');
                 this.flashScreen('red');
                 this.shakeCamera();
+                this.spawnParticles('fire', result.target);
             }
         } else if (result.type === 'heal') {
             const res = this.game.applyHeal(result.target, result.value);
             this.log(`${this.game.players[result.target].name} recovers ${res.recovered} HP.`, 'heal');
             if (res.hasShield) this.log(`${this.game.players[result.target].name} is shielded!`, 'shield');
             this.flashScreen('cyan');
+            this.spawnParticles('heal', result.target);
         } else if (result.type === 'poison') {
              this.game.applyDamage(result.target, 1);
              this.game.players[result.target].pendingPoison += 1;
              this.log(`${this.game.players[result.target].name} is afflicted with Venomous Dread!`, 'poison');
              this.flashScreen('green');
+             this.spawnParticles('poison', result.target);
         }
     }
 
@@ -308,9 +384,72 @@ class GameUI {
             this.updateUI();
             return;
         }
-        this.game.activePlayerIndex = 1 - this.game.activePlayerIndex;
+        
+        // Before passing turn, process lingering poison for the *next* player
+        const nextPlayerIndex = 1 - this.game.activePlayerIndex;
+        const nextPlayer = this.game.players[nextPlayerIndex];
+        if (nextPlayer.pendingPoison > 0) {
+            this.log(`Lingering Toxin burns ${nextPlayer.name}...`, 'poison');
+            this.game.applyDamage(nextPlayerIndex, nextPlayer.pendingPoison);
+            nextPlayer.pendingPoison = 0;
+            this.updateHUD();
+            this.flashScreen('green');
+            this.spawnParticles('poison', nextPlayerIndex);
+        }
+
+        this.game.activePlayerIndex = nextPlayerIndex;
         this.game.phase = Phase.PASS_TO_ACTIVE;
         this.updateUI();
+    }
+
+    spawnParticles(type, playerIndex) {
+        const colors = { fire: 0xff4400, heal: 0x00ffff, poison: 0x44ff44, shield: 0xffaa00 };
+        const color = colors[type];
+        
+        const count = 30;
+        const geometry = new THREE.BufferGeometry();
+        const posArray = new Float32Array(count * 3);
+        const velArray = new Float32Array(count * 3);
+        
+        const baseX = (playerIndex === 0 ? -2 : 2);
+        for(let i=0; i<count; i++) {
+            posArray[i*3] = baseX + (Math.random() - 0.5) * 0.5;
+            posArray[i*3+1] = -0.5 + Math.random() * 0.5;
+            posArray[i*3+2] = 0;
+            
+            velArray[i*3] = (Math.random() - 0.5) * 0.05;
+            velArray[i*3+1] = Math.random() * 0.05;
+            velArray[i*3+2] = (Math.random() - 0.5) * 0.05;
+        }
+        
+        geometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+        const material = new THREE.PointsMaterial({ size: 0.1, color: color, transparent: true, opacity: 1 });
+        const points = new THREE.Points(geometry, material);
+        
+        this.scene.add(points);
+        
+        const starTime = Date.now();
+        const duration = 1000;
+        
+        const update = () => {
+             const elapsed = Date.now() - starTime;
+             if (elapsed < duration) {
+                 const pos = points.geometry.attributes.position.array;
+                 for(let i=0; i<count; i++) {
+                     pos[i*3] += velArray[i*3];
+                     pos[i*3+1] += velArray[i*3+1];
+                     pos[i*3+2] += velArray[i*3+2];
+                 }
+                 points.geometry.attributes.position.needsUpdate = true;
+                 material.opacity = 1 - (elapsed / duration);
+                 requestAnimationFrame(update);
+             } else {
+                 this.scene.remove(points);
+                 geometry.dispose();
+                 material.dispose();
+             }
+        };
+        update();
     }
 
     updateHUD() {
@@ -330,7 +469,27 @@ class GameUI {
             // Shield visual
             hud.style.boxShadow = p.hasShield ? '0 0 15px var(--shield-color)' : 'none';
             hud.style.borderColor = p.hasShield ? 'var(--shield-color)' : 'var(--text-muted)';
+            
+            // Poison visual
+            if (p.pendingPoison > 0) {
+                text.style.color = 'var(--poison-color)';
+                text.classList.add('shake');
+                hud.classList.add('pulsing-poison');
+            } else {
+                text.style.color = 'white';
+                text.classList.remove('shake');
+                hud.classList.remove('pulsing-poison');
+            }
         });
+
+        // Vignette logic for active player
+        const activePlayer = this.game.players[this.game.activePlayerIndex];
+        const flash = document.getElementById('screen-flash');
+        if (activePlayer.pendingPoison > 0) {
+            flash.classList.add('pulsing-vignette-poison');
+        } else {
+            flash.classList.remove('pulsing-vignette-poison');
+        }
     }
 
     log(msg, type = '') {

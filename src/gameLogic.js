@@ -26,13 +26,14 @@ export class GameState {
     constructor() {
         this.MAX_HP = 10;
         this.INGREDIENTS_PER_TURN = 4;
+        this.TURNS_FOR_ABILITY = 3;
         this.resetMatch();
     }
 
     resetMatch() {
         this.players = [
-            { name: "Player 1", hp: 10, pendingPoison: 0, hasShield: false },
-            { name: "Player 2", hp: 10, pendingPoison: 0, hasShield: false }
+            { name: "Player 1", hp: 10, pendingPoison: 0, hasShield: false, isAi: false, abilities: [] },
+            { name: "Player 2", hp: 10, pendingPoison: 0, hasShield: false, isAi: true, abilities: [] }
         ];
         this.activePlayerIndex = 0;
         this.turnNumber = 0;
@@ -41,6 +42,7 @@ export class GameState {
         this.selectedIndexes = [];
         this.brewedPotions = [];
         this.winner = null;
+        this.peekedIndex = -1; // Index of the potion peeked this turn
     }
 
     rollIngredients() {
@@ -48,6 +50,40 @@ export class GameState {
             Math.floor(Math.random() * 4)
         );
         this.selectedIndexes = [];
+        this.peekedIndex = -1;
+    }
+
+    aiCraft() {
+        // AI selects all current ingredients in a semi-random order
+        const indexes = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
+        this.selectedIndexes = indexes;
+        this.lockPotions();
+    }
+
+    aiChoose() {
+        // AI simply picks one of the two potions
+        // Future: Add strategy based on known cards if ability used
+        return Math.floor(Math.random() * 2);
+    }
+
+    rollAbility() {
+        const abilities = ["PEEK", "DOUBLE_DRAW", "SHIELD_BOOST"];
+        const roll = abilities[Math.floor(Math.random() * abilities.length)];
+        this.players[this.activePlayerIndex].abilities.push(roll);
+        return roll;
+    }
+
+    useAbility(ability) {
+        const player = this.players[this.activePlayerIndex];
+        const idx = player.abilities.indexOf(ability);
+        if (idx > -1) {
+            player.abilities.splice(idx, 1);
+            if (ability === "PEEK" && this.phase === Phase.CHOOSE) {
+                this.peekedIndex = Math.floor(Math.random() * 2);
+                return { success: true, peekedIndex: this.peekedIndex, content: this.brewedPotions[this.peekedIndex] };
+            }
+        }
+        return { success: false };
     }
 
     selectIngredient(index) {
