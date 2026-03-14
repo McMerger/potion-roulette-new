@@ -19,6 +19,10 @@
     user-select: none;
 }
 
+.hidden {
+    display: none !important;
+}
+
 body {
     background-color: var(--bg-void);
     color: var(--text-primary);
@@ -349,4 +353,16 @@ footer {
 
 .pulsing-vignette-damage {
     box-shadow: inset 0 0 100px rgba(204, 0, 0, 0.4) !important;
+}
+
+#screen-flash {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 150;
+    pointer-events: none;
+    transition: opacity 0.3s ease-out;
+    opacity: 0;
 }
