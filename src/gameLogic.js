@@ -1,8 +1,8 @@
 export const Ingredient = {
-    FIRE: 0,
-    POISON: 1,
-    HEAL: 2,
-    CHAOS: 3
+    FIRE: 'fire',
+    POISON: 'poison',
+    HEAL: 'heal',
+    CHAOS: 'chaos'
 };
 
 export const Phase = {
@@ -13,173 +13,301 @@ export const Phase = {
     GAME_OVER: 4
 };
 
-export const ChaosOutcome = {
-    HP_SWAP: 0,
-    FRIENDLY_FIRE: 1,
-    TOXIC_CLOUD: 2,
-    ALCHEMISTS_GIFT: 3,
-    STEAL_CARD: 4,
-    MIRACLE_HEAL: 5
-};
+const STARTING_DECK = [
+    ...Array(4).fill(Ingredient.FIRE),
+    ...Array(4).fill(Ingredient.POISON),
+    ...Array(6).fill(Ingredient.HEAL),
+    ...Array(10).fill(Ingredient.CHAOS)
+];
+
+const DEFAULT_POTION = [Ingredient.CHAOS, Ingredient.CHAOS];
 
 export class GameState {
     constructor() {
         this.MAX_HP = 10;
-        this.INGREDIENTS_PER_TURN = 4;
-        this.TURNS_FOR_ABILITY = 3;
         this.resetMatch();
     }
 
     resetMatch() {
         this.players = [
-            { name: "Player 1", hp: 10, pendingPoison: 0, hasShield: false, isAi: false, abilities: [] },
-            { name: "Player 2", hp: 10, pendingPoison: 0, hasShield: false, isAi: true, abilities: [] }
+            { name: "Player 1", hp: this.MAX_HP, isAi: false, hand: [...STARTING_DECK] },
+            { name: "Player 2", hp: this.MAX_HP, isAi: true, hand: [...STARTING_DECK] }
         ];
         this.activePlayerIndex = 0;
-        this.turnNumber = 0;
+        this.turnNumber = 1;
         this.phase = Phase.PASS_TO_ACTIVE;
-        this.currentIngredients = [];
-        this.selectedIndexes = [];
-        this.brewedPotions = [];
-        this.winner = null;
-        this.peekedIndex = -1; // Index of the potion peeked this turn
-    }
-
-    rollIngredients() {
-        this.currentIngredients = Array.from({ length: this.INGREDIENTS_PER_TURN }, () => 
-            Math.floor(Math.random() * 4)
-        );
-        this.selectedIndexes = [];
-        this.peekedIndex = -1;
-    }
-
-    aiCraft() {
-        // AI selects all current ingredients in a semi-random order
-        const indexes = [0, 1, 2, 3].sort(() => Math.random() - 0.5);
-        this.selectedIndexes = indexes;
-        this.lockPotions();
-    }
-
-    aiChoose() {
-        // AI simply picks one of the two potions
-        // Future: Add strategy based on known cards if ability used
-        return Math.floor(Math.random() * 2);
-    }
-
-    rollAbility() {
-        const abilities = ["PEEK", "DOUBLE_DRAW", "SHIELD_BOOST"];
-        const roll = abilities[Math.floor(Math.random() * abilities.length)];
-        this.players[this.activePlayerIndex].abilities.push(roll);
-        return roll;
-    }
-
-    useAbility(ability) {
-        const player = this.players[this.activePlayerIndex];
-        const idx = player.abilities.indexOf(ability);
-        if (idx > -1) {
-            player.abilities.splice(idx, 1);
-            if (ability === "PEEK" && this.phase === Phase.CHOOSE) {
-                this.peekedIndex = Math.floor(Math.random() * 2);
-                return { success: true, peekedIndex: this.peekedIndex, content: this.brewedPotions[this.peekedIndex] };
-            }
-        }
-        return { success: false };
-    }
-
-    selectIngredient(index) {
-        if (this.phase !== Phase.CRAFT) return false;
-        if (this.selectedIndexes.includes(index)) return false;
-        if (this.selectedIndexes.length >= this.INGREDIENTS_PER_TURN) return false;
         
-        this.selectedIndexes.push(index);
+        this.selectedCards = []; // Up to 4 ingredients selected from hand
+        this.brewedPotions = []; 
+        this.winner = null;
+        
+        // Match Python's round tracking
+        this.roundLifeLost = [0, 0];
+    }
+
+    getAvailableHand() {
+        const hand = [...this.players[this.activePlayerIndex].hand];
+        // Remove currently selected cards so they aren't double-counted
+        this.selectedCards.forEach(card => {
+            const idx = hand.indexOf(card);
+            if (idx > -1) hand.splice(idx, 1);
+        });
+        return hand;
+    }
+
+    selectIngredient(type) {
+        if (this.phase !== Phase.CRAFT) return false;
+        if (this.selectedCards.length >= 4) return false;
+        
+        const available = this.getAvailableHand();
+        if (available.includes(type)) {
+            this.selectedCards.push(type);
+            return true;
+        }
+        return false;
+    }
+
+    deselectIngredient(index) {
+        if (this.phase !== Phase.CRAFT) return false;
+        this.selectedCards.splice(index, 1);
         return true;
     }
 
     lockPotions() {
-        if (this.selectedIndexes.length !== this.INGREDIENTS_PER_TURN) return false;
+        if (this.selectedCards.length !== 4) return false;
         
-        const first = [
-            this.currentIngredients[this.selectedIndexes[0]],
-            this.currentIngredients[this.selectedIndexes[1]]
-        ];
-        const second = [
-            this.currentIngredients[this.selectedIndexes[2]],
-            this.currentIngredients[this.selectedIndexes[3]]
+        // Remove cards from actual hand
+        const player = this.players[this.activePlayerIndex];
+        this.selectedCards.forEach(card => {
+            const idx = player.hand.indexOf(card);
+            if (idx > -1) player.hand.splice(idx, 1);
+        });
+
+        this.brewedPotions = [
+            [this.selectedCards[0], this.selectedCards[1]],
+            [this.selectedCards[2], this.selectedCards[3]]
         ];
         
-        this.brewedPotions = [first, second];
         this.phase = Phase.PASS_TO_CHOOSER;
         return true;
     }
 
-    resolvePotion(index) {
+    resolvePotion(chosenIndex) {
+        this.roundLifeLost = [0, 0]; // Reset round tracking
+
+        const brewerIndex = this.activePlayerIndex;
         const drinkerIndex = 1 - this.activePlayerIndex;
-        const potion = this.brewedPotions[index];
-        const sorted = [...potion].sort((a, b) => a - b);
         
-        let result = {
-            type: 'fizzle',
-            value: 0,
-            target: drinkerIndex,
-            message: "The mixture fizzles into grey sludge."
-        };
+        const chosenPotion = this.brewedPotions[chosenIndex];
+        const otherPotion = this.brewedPotions[1 - chosenIndex];
+        
+        const results = [
+            { target: drinkerIndex, potion: chosenPotion, effect: this.evaluatePotion(chosenPotion) },
+            { target: brewerIndex, potion: otherPotion, effect: this.evaluatePotion(otherPotion) }
+        ];
 
-        // Simplified logic matching GDScript
-        if (JSON.stringify(sorted) === JSON.stringify([Ingredient.FIRE, Ingredient.FIRE])) {
-            result = { type: 'damage', value: 2, target: drinkerIndex, source: "Inferno" };
-        } else if (JSON.stringify(sorted) === JSON.stringify([Ingredient.POISON, Ingredient.POISON])) {
-            result = { type: 'damage', value: 2, target: drinkerIndex, source: "Lethal Toxin" };
-        } else if (JSON.stringify(sorted) === JSON.stringify([Ingredient.FIRE, Ingredient.POISON])) {
-            result = { type: 'damage', value: 3, target: drinkerIndex, source: "Explosive Blight" };
-        } else if (JSON.stringify(sorted) === JSON.stringify([Ingredient.HEAL, Ingredient.HEAL])) {
-            result = { type: 'heal', value: 2, target: drinkerIndex, source: "Pure Essence" };
-        } else if (JSON.stringify(sorted) === JSON.stringify([Ingredient.CHAOS, Ingredient.HEAL])) {
-            const target = Math.random() > 0.5 ? 0 : 1;
-            result = { type: 'heal', value: 1, target: target, source: "Chaotic Relief" };
-        } else if (JSON.stringify(sorted) === JSON.stringify([Ingredient.CHAOS, Ingredient.FIRE])) {
-            const target = Math.random() > 0.5 ? 0 : 1;
-            result = { type: 'damage', value: 1, target: target, source: "Wildfire" };
-        } else if (JSON.stringify(sorted) === JSON.stringify([Ingredient.CHAOS, Ingredient.POISON])) {
-            result = { type: 'poison', value: 1, target: drinkerIndex, source: "Venomous Dread" };
-        } else if (JSON.stringify(sorted) === JSON.stringify([Ingredient.CHAOS, Ingredient.CHAOS])) {
-            result = { type: 'chaos' };
-        }
-
-        return result;
+        return results; // main.js processes UI and then calls applyResolution
     }
 
-    applyDamage(playerIndex, amount) {
-        const player = this.players[playerIndex];
-        if (player.hasShield) {
-            player.hasShield = false;
-            return { blocked: true };
+    applyResolution(results) {
+        results.forEach(res => {
+            this.applyResult(res.effect, res.target);
+        });
+        
+        this.players[0].hp = Math.max(0, Math.min(this.MAX_HP, this.players[0].hp));
+        this.players[1].hp = Math.max(0, Math.min(this.MAX_HP, this.players[1].hp));
+
+        let simultaneousDeath = false;
+        if (this.players[0].hp <= 0 && this.players[1].hp <= 0) {
+            simultaneousDeath = true;
+            this.players[0].hp = Math.min(this.MAX_HP, this.players[0].hp + this.roundLifeLost[0]);
+            this.players[1].hp = Math.min(this.MAX_HP, this.players[1].hp + this.roundLifeLost[1]);
+            this.grantRandomCards(this.activePlayerIndex, 2);
+        } else {
+            this.grantRandomCards(this.activePlayerIndex, 2);
         }
-        player.hp = Math.max(0, player.hp - amount);
-        return { blocked: false, newHp: player.hp };
+
+        if (!simultaneousDeath) {
+            this.checkGameOver();
+        }
+
+        if (!this.winner) {
+            this.activePlayerIndex = 1 - this.activePlayerIndex;
+            this.turnNumber++;
+            this.phase = Phase.PASS_TO_ACTIVE;
+            this.selectedCards = [];
+        }
+        
+        return simultaneousDeath;
     }
 
-    applyHeal(playerIndex, amount) {
-        const player = this.players[playerIndex];
-        const oldHp = player.hp;
-        player.hp = Math.min(this.MAX_HP, player.hp + amount);
-        const recovered = player.hp - oldHp;
-        const overflow = amount - recovered;
+    evaluatePotion(potion) {
+        const sorted = [...potion].sort((a,b) => a.localeCompare(b));
+        const str = JSON.stringify(sorted);
         
-        if (overflow > 0 && !player.hasShield) {
-            player.hasShield = true;
+        if (str === JSON.stringify(['fire', 'fire'])) return { kind: 'damage', amount: 2, label: "Fire + Fire" };
+        if (str === JSON.stringify(['poison', 'poison'])) return { kind: 'damage', amount: 2, label: "Poison + Poison" };
+        if (str === JSON.stringify(['fire', 'poison'])) return { kind: 'damage', amount: 3, label: "Explosive Blight" };
+        if (str === JSON.stringify(['heal', 'heal'])) return { kind: 'heal', amount: 2, label: "Pure Essence" };
+        if (str === JSON.stringify(['chaos', 'heal'])) return { kind: 'random_heal', amount: 1, label: "Chaotic Relief" };
+        if (str === JSON.stringify(['chaos', 'fire'])) return { kind: 'random_damage', amount: 1, label: "Wildfire" };
+        if (str === JSON.stringify(['chaos', 'chaos'])) return { kind: 'chaos_chaos', label: "Chaos Manifest" };
+        
+        return { kind: 'nothing', label: "Fizzles" };
+    }
+
+    applyResult(effect, target) {
+        if (effect.kind === 'damage') {
+            this.dealDamage(target, effect.amount);
+        } else if (effect.kind === 'heal') {
+            this.healPlayer(target, effect.amount);
+        } else if (effect.kind === 'random_heal') {
+            const rngTarget = Math.random() > 0.5 ? 0 : 1;
+            this.healPlayer(rngTarget, effect.amount);
+        } else if (effect.kind === 'random_damage') {
+            const rngTarget = Math.random() > 0.5 ? 0 : 1;
+            this.dealDamage(rngTarget, effect.amount);
         }
-        return { recovered, hasShield: player.hasShield };
+        // chaos_chaos is handled in main.js
+    }
+
+    dealDamage(target, amount) {
+        const p = this.players[target];
+        const lost = Math.min(amount, p.hp);
+        p.hp -= lost;
+        this.roundLifeLost[target] += lost;
+        return lost;
+    }
+
+    healPlayer(target, amount) {
+        const p = this.players[target];
+        const gained = Math.min(amount, this.MAX_HP - p.hp);
+        p.hp += gained;
+        return gained;
+    }
+
+    grantRandomCards(target, amount) {
+        const available = Object.values(Ingredient);
+        for(let i=0; i<amount; i++) {
+            this.players[target].hand.push(available[Math.floor(Math.random() * available.length)]);
+        }
     }
 
     checkGameOver() {
         const p1 = this.players[0].hp;
         const p2 = this.players[1].hp;
+        const h1 = this.players[0].hand.length;
+        const h2 = this.players[1].hand.length;
         
-        if (p1 <= 0 && p2 <= 0) this.winner = "MUTUAL DESTRUCTION";
+        if (p1 <= 0 && p2 <= 0) this.winner = "DRAW: MUTUAL DESTRUCTION";
         else if (p1 <= 0) this.winner = "PLAYER 2 SURVIVES";
         else if (p2 <= 0) this.winner = "PLAYER 1 SURVIVES";
+        else if (h1 === 0 && h2 === 0) this.winner = "DRAW: NO INGREDIENTS LEFT";
+        else if (h1 === 0) this.winner = "PLAYER 2 WINS: P1 DEPLETED";
+        else if (h2 === 0) this.winner = "PLAYER 1 WINS: P2 DEPLETED";
         
         if (this.winner) this.phase = Phase.GAME_OVER;
         return this.winner !== null;
+    }
+
+    // --- AI LOGIC (PORTED DIRECTLY FROM PYTHON) ---
+
+    aiCraft() {
+        const hand = this.players[this.activePlayerIndex].hand;
+        if (hand.length < 2) {
+            this.selectedCards = [];
+            this.brewedPotions = [DEFAULT_POTION, DEFAULT_POTION];
+            this.phase = Phase.PASS_TO_CHOOSER;
+            return;
+        }
+        if (hand.length < 4) {
+            // Pick real potion + default
+            const indices = this.getCombinations(Array.from(hand.keys()), 2);
+            let bestScore = -Infinity;
+            let bestPair = indices[0];
+            
+            indices.forEach(pair => {
+                const potion = [hand[pair[0]], hand[pair[1]]];
+                const score = this.scoreAiPair(potion, DEFAULT_POTION);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestPair = pair;
+                }
+            });
+            bestPair.sort((a,b)=>b-a).forEach(idx => hand.splice(idx,1));
+            const realPotion = [hand[bestPair[0]], hand[bestPair[1]]];
+            this.brewedPotions = Math.random() > 0.5 ? [realPotion, DEFAULT_POTION] : [DEFAULT_POTION, realPotion];
+            this.phase = Phase.PASS_TO_CHOOSER;
+            return;
+        }
+
+        // Full hand check
+        const indices = Array.from(hand.keys());
+        const quadIndices = this.getCombinations(indices, 4);
+        
+        let bestScore = -Infinity;
+        let bestPlan = null;
+        
+        quadIndices.forEach(quad => {
+            const cards = [hand[quad[0]], hand[quad[1]], hand[quad[2]], hand[quad[3]]];
+            const pairings = [
+                [[cards[0], cards[1]], [cards[2], cards[3]]],
+                [[cards[0], cards[2]], [cards[1], cards[3]]],
+                [[cards[0], cards[3]], [cards[1], cards[2]]]
+            ];
+            
+            pairings.forEach(pair => {
+                const score = this.scoreAiPair(pair[0], pair[1]);
+                if (score > bestScore) {
+                    bestScore = score;
+                    bestPlan = { used: quad, pA: pair[0], pB: pair[1] };
+                }
+            });
+        });
+
+        // Apply plan
+        bestPlan.used.sort((a,b)=>b-a).forEach(idx => hand.splice(idx,1));
+        this.brewedPotions = Math.random() > 0.5 ? [bestPlan.pA, bestPlan.pB] : [bestPlan.pB, bestPlan.pA];
+        this.phase = Phase.PASS_TO_CHOOSER;
+    }
+
+    scoreAiPair(potionA, potionB) {
+        const evalA = this.evaluatePotion(potionA);
+        const evalB = this.evaluatePotion(potionB);
+        
+        // Scenario A: Chooser picks A
+        const a_targetPlayer = this.scoreResult(evalA, true);
+        const a_targetAI = this.scoreResult(evalB, false);
+        const choiceA = a_targetPlayer + a_targetAI;
+
+        // Scenario B: Chooser picks B
+        const b_targetPlayer = this.scoreResult(evalB, true);
+        const b_targetAI = this.scoreResult(evalA, false);
+        const choiceB = b_targetPlayer + b_targetAI;
+
+        return Math.min(choiceA, choiceB) * 10 + choiceA + choiceB;
+    }
+
+    scoreResult(effect, targetIsPlayer) {
+        if (effect.kind === "damage") return targetIsPlayer ? effect.amount : -effect.amount;
+        if (effect.kind === "heal") return targetIsPlayer ? -effect.amount : effect.amount;
+        return 0; // random/chaos handled generically as 0 for predictable AI
+    }
+
+    aiChoose() {
+        return Math.floor(Math.random() * 2);
+    }
+
+    getCombinations(arr, size) {
+        const result = [];
+        const f = (prefix, arr) => {
+            for (let i = 0; i < arr.length; i++) {
+                const newPrefix = [...prefix, arr[i]];
+                if (newPrefix.length === size) result.push(newPrefix);
+                else f(newPrefix, arr.slice(i + 1));
+            }
+        }
+        f([], arr);
+        return result;
     }
 }
