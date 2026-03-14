@@ -1,4 +1,7 @@
 import * as THREE from 'three';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { RenderPixelatedPass } from 'three/addons/postprocessing/RenderPixelatedPass.js';
 import { GameState, Phase, Ingredient } from './gameLogic.js';
 
 class AudioManager {
@@ -49,18 +52,77 @@ class GameUI {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
 
-        const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+        // Stark, Moody PS1 Lighting
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.05); // Near black void
         this.scene.add(ambientLight);
 
-        const pointLight = new THREE.PointLight(0x9933cc, 2, 10);
-        pointLight.position.set(0, 2, 2);
-        this.scene.add(pointLight);
+        this.spotLight = new THREE.SpotLight(0xffddaa, 100);
+        this.spotLight.position.set(0, 8, 0);
+        this.spotLight.angle = Math.PI / 4;
+        this.spotLight.penumbra = 0.5;
+        this.spotLight.decay = 2;
+        this.spotLight.distance = 20;
+        this.scene.add(this.spotLight);
+        
+        // Opponent Manifestation (Floating Entity)
+        this.opponentGroup = new THREE.Group();
+        this.opponentGroup.position.set(0, 1.5, -4);
+        
+        const maskGeo = new THREE.IcosahedronGeometry(0.8, 1);
+        const maskMat = new THREE.MeshStandardMaterial({ color: 0x888888, flatShading: true });
+        this.opponentMask = new THREE.Mesh(maskGeo, maskMat);
+        
+        const eyeGeo = new THREE.CylinderGeometry(0.2, 0.2, 0.1, 16);
+        const eyeMat = new THREE.MeshStandardMaterial({ color: 0x111111 });
+        const leftEye = new THREE.Mesh(eyeGeo, eyeMat);
+        leftEye.rotation.x = Math.PI / 2;
+        leftEye.position.set(-0.35, 0.1, 0.75);
+        const rightEye = leftEye.clone();
+        rightEye.position.set(0.35, 0.1, 0.75);
+        
+        this.opponentMask.add(leftEye);
+        this.opponentMask.add(rightEye);
+        
+        this.opponentGroup.add(this.opponentMask);
+        this.scene.add(this.opponentGroup);
 
-        const tableGeometry = new THREE.BoxGeometry(4, 0.2, 3);
-        const tableMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8 });
-        this.table = new THREE.Mesh(tableGeometry, tableMaterial);
-        this.table.position.y = -1;
-        this.scene.add(this.table);
+        // Hover animation logic for opponent
+        this.oppHoverTime = 0;
+
+        // Complex Ritual Table Geometry
+        this.tableGroup = new THREE.Group();
+        this.tableGroup.position.y = -1;
+
+        const tableMat = new THREE.MeshStandardMaterial({ 
+            color: 0x222222, 
+            roughness: 0.9, 
+            metalness: 0.6 
+        });
+        
+        const rimMat = new THREE.MeshStandardMaterial({
+            color: 0x111111,
+            roughness: 0.7,
+            metalness: 0.8
+        });
+
+        // Main Base Platter
+        const baseGeo = new THREE.CylinderGeometry(3.5, 3.5, 0.4, 16);
+        const base = new THREE.Mesh(baseGeo, tableMat);
+        
+        // Outer Raised Rim
+        const rimGeo = new THREE.CylinderGeometry(3.6, 3.6, 0.5, 16);
+        const rim = new THREE.Mesh(rimGeo, rimMat);
+        rim.position.y = 0.05;
+        
+        // Inner Rotating Section (Simulated)
+        const innerGeo = new THREE.CylinderGeometry(1.5, 1.5, 0.45, 12);
+        const inner = new THREE.Mesh(innerGeo, tableMat);
+        inner.position.y = 0.02;
+
+        this.tableGroup.add(base);
+        this.tableGroup.add(rim);
+        this.tableGroup.add(inner);
+        this.scene.add(this.tableGroup);
 
         const particlesGeometry = new THREE.BufferGeometry();
         const particlesCount = 500;
@@ -74,9 +136,15 @@ class GameUI {
         this.scene.add(this.particles);
 
         this.camera.position.z = 5;
-    }
 
-    initUI() {
+        // Post-Processing Pipeline
+        this.composer = new EffectComposer(this.renderer);
+        const renderPass = new RenderPass(this.scene, this.camera);
+        this.composer.addPass(renderPass);
+        
+        // Crunched PS1 resolution factor (e.g. 6)
+        const renderPixelatedPass = new RenderPixelatedPass(6, this.scene, this.camera);
+        this.composer.addPass(renderPixelatedPass);
         this.primaryBtn = document.getElementById('primary-btn');
         this.onlineBtn = document.getElementById('online-btn');
         this.secondaryBtn = document.getElementById('secondary-btn');
@@ -203,13 +271,13 @@ class GameUI {
                 if (effect.kind === 'damage') {
                     this.audio.playDamage();
                     this.log(`${this.game.players[target].name} takes ${effect.amount} damage from ${effect.label}!`, 'fire');
-                    this.flashScreen('red');
+                    this.flashScreen('red', target);
                     this.shakeCamera();
                     this.spawnParticles('fire', target);
                 } else if (effect.kind === 'heal') {
                     this.audio.playHeal();
                     this.log(`${this.game.players[target].name} heals ${effect.amount} from ${effect.label}.`, 'heal');
-                    this.flashScreen('cyan');
+                    this.flashScreen('cyan', target);
                     this.spawnParticles('heal', target);
                 } else if (effect.kind === 'random_heal') {
                     this.audio.playHeal();
@@ -388,13 +456,13 @@ class GameUI {
             if (effect.kind === 'damage') {
                 this.audio.playDamage();
                 this.log(`${this.game.players[target].name} takes ${effect.amount} damage from ${effect.label}!`, 'fire');
-                this.flashScreen('red');
+                this.flashScreen('red', target);
                 this.shakeCamera();
                 this.spawnParticles('fire', target);
             } else if (effect.kind === 'heal') {
                 this.audio.playHeal();
                 this.log(`${this.game.players[target].name} heals ${effect.amount} from ${effect.label}.`, 'heal');
-                this.flashScreen('cyan');
+                this.flashScreen('cyan', target);
                 this.spawnParticles('heal', target);
             } else if (effect.kind === 'random_heal') {
                 this.audio.playHeal();
@@ -599,13 +667,22 @@ class GameUI {
         return 'white';
     }
 
-    flashScreen(color) {
+    flashScreen(color, target = null) {
         const flash = document.getElementById('screen-flash');
         flash.style.backgroundColor = color === 'red' ? 'rgba(204, 0, 0, 0.4)' : 
                                      color === 'cyan' ? 'rgba(51, 204, 204, 0.4)' : 
                                      color === 'gold' ? 'rgba(204, 170, 51, 0.4)' : 'rgba(153, 51, 204, 0.4)';
         flash.style.opacity = 1;
         setTimeout(() => flash.style.opacity = 0, 300);
+        
+        // If opponent took damage, flash their 3D entity
+        if (target === 1 && this.opponentMask) {
+            const originalColor = this.opponentMask.material.color.getHex();
+            this.opponentMask.material.color.setHex(color === 'red' ? 0xcc0000 : color === 'cyan' ? 0x33cccc : 0xcc0000);
+            setTimeout(() => {
+                if(this.opponentMask) this.opponentMask.material.color.setHex(originalColor);
+            }, 300);
+        }
     }
 
     shakeCamera() {
@@ -629,13 +706,23 @@ class GameUI {
     animate() {
         requestAnimationFrame(() => this.animate());
         this.particles.rotation.y += 0.001;
-        this.renderer.render(this.scene, this.camera);
+        
+        // Hover opponent
+        if (this.opponentGroup) {
+            this.oppHoverTime += 0.02;
+            this.opponentGroup.position.y = 1.5 + Math.sin(this.oppHoverTime) * 0.1;
+            this.opponentMask.rotation.y = Math.sin(this.oppHoverTime * 0.5) * 0.2;
+            this.opponentMask.rotation.z = Math.cos(this.oppHoverTime * 0.3) * 0.05;
+        }
+        
+        this.composer.render();
     }
 
     onWindowResize() {
         this.camera.aspect = window.innerWidth / window.innerHeight;
         this.camera.updateProjectionMatrix();
         this.renderer.setSize(window.innerWidth, window.innerHeight);
+        this.composer.setSize(window.innerWidth, window.innerHeight);
     }
 }
 
