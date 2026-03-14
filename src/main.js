@@ -82,8 +82,25 @@ class GameUI {
         
         this.opponentMask.add(leftEye);
         this.opponentMask.add(rightEye);
-        
         this.opponentGroup.add(this.opponentMask);
+        
+        // Mechanical Hands
+        const handGeo = new THREE.CylinderGeometry(0.1, 0.2, 0.6, 8);
+        const handMat = new THREE.MeshStandardMaterial({ color: 0x555555, roughness: 0.8, metalness: 0.5 });
+        
+        this.leftHand = new THREE.Mesh(handGeo, handMat);
+        this.leftHand.position.set(-1.5, -0.5, 0.5);
+        this.leftHand.rotation.z = -Math.PI / 4;
+        this.leftHand.rotation.x = Math.PI / 6;
+        
+        this.rightHand = new THREE.Mesh(handGeo, handMat);
+        this.rightHand.position.set(1.5, -0.5, 0.5);
+        this.rightHand.rotation.z = Math.PI / 4;
+        this.rightHand.rotation.x = Math.PI / 6;
+        
+        this.opponentGroup.add(this.leftHand);
+        this.opponentGroup.add(this.rightHand);
+        
         this.scene.add(this.opponentGroup);
 
         // Hover animation logic for opponent
@@ -123,6 +140,111 @@ class GameUI {
         this.tableGroup.add(rim);
         this.tableGroup.add(inner);
         this.scene.add(this.tableGroup);
+
+        // Atmospheric Props: Hanging Cables
+        const cableMat = new THREE.LineBasicMaterial({ color: 0x111111, linewidth: 3 });
+        for (let i = 0; i < 8; i++) {
+            const points = [];
+            const startX = (Math.random() - 0.5) * 10;
+            const startZ = -4 + (Math.random() - 0.5) * 8;
+            
+            points.push(new THREE.Vector3(startX, 6, startZ)); // Ceiling
+            points.push(new THREE.Vector3(startX + (Math.random()-0.5)*2, 2, startZ + (Math.random()-0.5)*2)); // Mid-hang
+            points.push(new THREE.Vector3(startX + (Math.random()-0.5)*4, -2, startZ + (Math.random()-0.5)*4)); // Floor
+            
+            const curve = new THREE.CatmullRomCurve3(points);
+            const tubeGeo = new THREE.TubeGeometry(curve, 20, 0.05, 8, false);
+            const cableMesh = new THREE.Mesh(tubeGeo, new THREE.MeshStandardMaterial({color: 0x222222, roughness: 1}));
+            this.scene.add(cableMesh);
+        }
+
+        // Atmospheric Props: Abandoned CRT Monitors
+        const crtGeo = new THREE.BoxGeometry(0.8, 0.8, 0.8);
+        const crtMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.9 });
+        const screenMat = new THREE.MeshBasicMaterial({ color: 0x050505 });
+        
+        for (let i = 0; i < 4; i++) {
+            const crt = new THREE.Group();
+            const casing = new THREE.Mesh(crtGeo, crtMat);
+            const screenGeo = new THREE.PlaneGeometry(0.7, 0.7);
+            const screen = new THREE.Mesh(screenGeo, screenMat);
+            screen.position.z = 0.41;
+            
+            crt.add(casing);
+            crt.add(screen);
+            
+            const angle = (Math.PI * 2 / 4) * i + Math.PI/4;
+            crt.position.set(Math.cos(angle) * 5, -0.6, Math.sin(angle) * 5 - 2);
+            crt.lookAt(0, -0.6, 0);
+            
+            // Randomly tilt monitors
+            crt.rotation.x += (Math.random() - 0.5) * 0.5;
+            crt.rotation.z += (Math.random() - 0.5) * 0.2;
+            
+            this.scene.add(crt);
+        }
+
+        // Atmospheric Props: Speakers in the background
+        const speakerGeo = new THREE.BoxGeometry(0.8, 1.5, 0.6);
+        const speakerMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.8 });
+        const coneGeo = new THREE.CylinderGeometry(0.3, 0.3, 0.1, 12);
+        const coneMat = new THREE.MeshStandardMaterial({ color: 0x222222 });
+        
+        for (let i = 0; i < 2; i++) {
+            const speaker = new THREE.Group();
+            const box = new THREE.Mesh(speakerGeo, speakerMat);
+            speaker.add(box);
+            
+            const lowerCone = new THREE.Mesh(coneGeo, coneMat);
+            lowerCone.rotation.x = Math.PI/2;
+            lowerCone.position.set(0, -0.3, 0.31);
+            speaker.add(lowerCone);
+            
+            const upperCone = lowerCone.clone();
+            upperCone.scale.set(0.6, 0.6, 1);
+            upperCone.position.set(0, 0.3, 0.31);
+            speaker.add(upperCone);
+            
+            speaker.position.set(i === 0 ? -4 : 4, -0.25, -3.5);
+            speaker.rotation.y = i === 0 ? Math.PI/6 : -Math.PI/6;
+            this.scene.add(speaker);
+        }
+
+        // Atmospheric Props: Flickering Candles on the rim
+        this.candles = [];
+        const candleGeo = new THREE.CylinderGeometry(0.05, 0.05, 0.3, 6);
+        const candleMat = new THREE.MeshStandardMaterial({ color: 0xddddcc, emissive: 0x221100 });
+        
+        for (let i = 0; i < 6; i++) {
+            const candle = new THREE.Group();
+            const wax = new THREE.Mesh(candleGeo, candleMat);
+            candle.add(wax);
+            
+            const flameGeo = new THREE.SphereGeometry(0.04, 4, 4);
+            const flameMat = new THREE.MeshBasicMaterial({ color: 0xffaa00 });
+            const flame = new THREE.Mesh(flameGeo, flameMat);
+            flame.position.y = 0.2;
+            candle.add(flame);
+            
+            const light = new THREE.PointLight(0xff6600, 1, 3);
+            light.position.y = 0.2;
+            candle.add(light);
+            
+            const angle = (Math.PI * 2 / 6) * i;
+            candle.position.set(Math.cos(angle) * 3.3, -0.65, Math.sin(angle) * 3.3);
+            this.scene.add(candle);
+            this.candles.push({ group: candle, light: light, flame: flame, offset: Math.random() * 10 });
+        }
+
+        // 3D Spatial Labels for Player Names
+        this.playerLabels = [];
+        this.createPlayerLabel(0, "PLAYER 1", new THREE.Vector3(-3, 0.8, 0));
+        this.createPlayerLabel(1, "PLAYER 2", new THREE.Vector3(3, 0.8, 0));
+
+        // 3D Spatial HP Indicators (Battery lights on the table)
+        this.hpIndicators = [[], []];
+        this.createHPIndicators(0, new THREE.Vector3(-2.5, -0.55, 1));
+        this.createHPIndicators(1, new THREE.Vector3(2.5, -0.55, 1));
 
         const particlesGeometry = new THREE.BufferGeometry();
         const particlesCount = 500;
@@ -586,6 +708,89 @@ class GameUI {
         animate();
     }
 
+    createPlayerLabel(index, name, position) {
+        const canvas = document.createElement('canvas');
+        canvas.width = 512;
+        canvas.height = 128;
+        const ctx = canvas.getContext('2d');
+        
+        const texture = new THREE.CanvasTexture(canvas);
+        const material = new THREE.SpriteMaterial({ map: texture, transparent: true });
+        const sprite = new THREE.Sprite(material);
+        sprite.scale.set(2, 0.5, 1);
+        sprite.position.copy(position);
+        
+        this.scene.add(sprite);
+        this.playerLabels[index] = { sprite, texture, canvas, ctx };
+        this.updatePlayerLabel(index, name);
+    }
+
+    updatePlayerLabel(index, text) {
+        const label = this.playerLabels[index];
+        if (!label) return;
+        
+        const { ctx, canvas, texture } = label;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        // Pixelated PS1 Font Style
+        ctx.fillStyle = index === 0 ? '#33cccc' : '#cc0000';
+        ctx.font = 'bold 64px Courier New'; // Monospace fits the retro vibe
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        
+        // Inner glow/shadow
+        ctx.shadowColor = 'black';
+        ctx.shadowBlur = 10;
+        ctx.fillText(text.toUpperCase(), canvas.width / 2, canvas.height / 2);
+        
+        texture.needsUpdate = true;
+    }
+
+    createHPIndicators(playerIndex, startPos) {
+        const segmentGeo = new THREE.BoxGeometry(0.15, 0.05, 0.4);
+        const segmentMatBase = new THREE.MeshStandardMaterial({ 
+            color: 0x111111, 
+            roughness: 0.8,
+            metalness: 0.5
+        });
+
+        for (let i = 0; i < 10; i++) {
+            const segment = new THREE.Mesh(segmentGeo, segmentMatBase.clone());
+            segment.position.copy(startPos);
+            segment.position.x += i * 0.2 * (playerIndex === 0 ? 1 : -1);
+            
+            // Add light cap
+            const capGeo = new THREE.PlaneGeometry(0.12, 0.35);
+            const capMat = new THREE.MeshBasicMaterial({ color: 0x00ff00, transparent: true, opacity: 0.1 });
+            const cap = new THREE.Mesh(capGeo, capMat);
+            cap.rotation.x = -Math.PI / 2;
+            cap.position.y = 0.026;
+            segment.add(cap);
+
+            this.scene.add(segment);
+            this.hpIndicators[playerIndex].push({ mesh: segment, cap: cap });
+        }
+    }
+
+    updateHPIndicators(playerIndex, hp) {
+        const indicators = this.hpIndicators[playerIndex];
+        if (!indicators) return;
+
+        indicators.forEach((ind, i) => {
+            const isActive = i < hp;
+            if (isActive) {
+                const color = hp > 6 ? 0x00ff66 : (hp > 3 ? 0xffaa00 : 0xff3300);
+                ind.cap.material.color.setHex(color);
+                ind.cap.material.opacity = 0.8;
+                ind.isCritical = hp <= 3;
+            } else {
+                ind.cap.material.opacity = 0.05;
+                ind.cap.material.color.setHex(0x333333);
+                ind.isCritical = false;
+            }
+        });
+    }
+
     spawnParticles(type, playerIndex) {
         const colors = { fire: 0xff4400, heal: 0x00ffff, poison: 0x44ff44, shield: 0xffaa00 };
         const color = colors[type] || 0x9933cc;
@@ -636,19 +841,12 @@ class GameUI {
 
     updateHUD() {
         this.game.players.forEach((p, i) => {
-            const fill = document.getElementById(`p${i+1}-hp-fill`);
-            const text = document.getElementById(`p${i+1}-hp-text`);
-            const nameEl = document.querySelector(`#player${i+1}-hud .player-name`);
+            // Sync with 3D Spatial label
+            const labelText = `${p.name} (${p.hand.length})`;
+            this.updatePlayerLabel(i, labelText);
             
-            fill.style.width = `${(p.hp / 10) * 100}%`;
-            text.textContent = `${p.hp} / 10`;
-            
-            // Show card count
-            nameEl.textContent = `${p.name.toUpperCase()} (CARDS: ${p.hand.length})`;
-            
-            if (p.hp > 6) fill.style.backgroundColor = 'var(--heal-color)';
-            else if (p.hp > 3) fill.style.backgroundColor = '#ccaa33';
-            else fill.style.backgroundColor = 'var(--fire-color)';
+            // Sync with 3D HP Indicators
+            this.updateHPIndicators(i, p.hp);
         });
     }
 
@@ -713,7 +911,33 @@ class GameUI {
             this.opponentGroup.position.y = 1.5 + Math.sin(this.oppHoverTime) * 0.1;
             this.opponentMask.rotation.y = Math.sin(this.oppHoverTime * 0.5) * 0.2;
             this.opponentMask.rotation.z = Math.cos(this.oppHoverTime * 0.3) * 0.05;
+            
+            // Independent hand bobbing
+            if (this.leftHand && this.rightHand) {
+                this.leftHand.position.y = -0.5 + Math.sin(this.oppHoverTime * 1.2) * 0.15;
+                this.leftHand.rotation.x = Math.PI / 6 + Math.cos(this.oppHoverTime * 0.8) * 0.1;
+                
+                this.rightHand.position.y = -0.5 + Math.cos(this.oppHoverTime * 1.1) * 0.15;
+                this.rightHand.rotation.x = Math.PI / 6 + Math.sin(this.oppHoverTime * 0.9) * 0.1;
+            }
         }
+
+        // Candle Flickering
+        this.candles.forEach(c => {
+            const time = Date.now() * 0.005 + c.offset;
+            const flicker = Math.sin(time * 10) * 0.2 + Math.sin(time * 7) * 0.1;
+            c.light.intensity = 1.0 + flicker;
+            c.flame.scale.setScalar(1.0 + flicker * 0.5);
+        });
+
+        // HP Indicator Flickering (Critical HP)
+        this.hpIndicators.forEach(playerInds => {
+            playerInds.forEach(ind => {
+                if (ind.isCritical && ind.cap.material.opacity > 0.1) {
+                    ind.cap.material.opacity = 0.5 + Math.sin(Date.now() * 0.01) * 0.3;
+                }
+            });
+        });
         
         this.composer.render();
     }
