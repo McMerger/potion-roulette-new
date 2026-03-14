@@ -1,13 +1,42 @@
 import * as THREE from 'three';
 import { GameState, Phase, Ingredient } from './gameLogic.js';
 
+class AudioManager {
+    constructor() {
+        this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+
+    playTone(freq, type, duration, vol = 0.1) {
+        if (this.ctx.state === 'suspended') this.ctx.resume();
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = type;
+        osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
+        
+        gain.gain.setValueAtTime(vol, this.ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+        
+        osc.connect(gain);
+        gain.connect(this.ctx.destination);
+        osc.start();
+        osc.stop(this.ctx.currentTime + duration);
+    }
+
+    playClick() { this.playTone(800, 'sine', 0.1, 0.05); }
+    playSelect() { this.playTone(400, 'square', 0.15, 0.05); }
+    playDamage() { this.playTone(100, 'sawtooth', 0.5, 0.2); }
+    playHeal() { this.playTone(1200, 'sine', 0.6, 0.1); }
+    playTick() { this.playTone(2000, 'triangle', 0.05, 0.02); }
+    playChaos() { this.playTone(200, 'triangle', 1.0, 0.3); }
+}
+
 class GameUI {
     constructor() {
         this.game = new GameState();
+        this.audio = new AudioManager();
         this.setupThreeJS();
         this.initUI();
         this.animate();
-        
         window.addEventListener('resize', () => this.onWindowResize());
     }
 
@@ -20,7 +49,6 @@ class GameUI {
         this.renderer.setSize(window.innerWidth, window.innerHeight);
         this.renderer.setPixelRatio(window.devicePixelRatio);
 
-        // Moody Lighting
         const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
         this.scene.add(ambientLight);
 
@@ -28,14 +56,12 @@ class GameUI {
         pointLight.position.set(0, 2, 2);
         this.scene.add(pointLight);
 
-        // Alchemy Table
         const tableGeometry = new THREE.BoxGeometry(4, 0.2, 3);
         const tableMaterial = new THREE.MeshStandardMaterial({ color: 0x1a1a1a, roughness: 0.8 });
         this.table = new THREE.Mesh(tableGeometry, tableMaterial);
         this.table.position.y = -1;
         this.scene.add(this.table);
 
-        // Floating particles
         const particlesGeometry = new THREE.BufferGeometry();
         const particlesCount = 500;
         const posArray = new Float32Array(particlesCount * 3);
@@ -56,8 +82,9 @@ class GameUI {
         this.instructions = document.getElementById('instructions');
         this.logContent = document.getElementById('log-content');
         
-        this.primaryBtn.addEventListener('click', () => this.handlePrimaryAction());
+        this.primaryBtn.addEventListener('click', () => { this.audio.playClick(); this.handlePrimaryAction(); });
         this.secondaryBtn.addEventListener('click', () => {
+             this.audio.playClick();
              this.game.selectedCards = [];
              this.updateUI();
         });
@@ -168,6 +195,7 @@ class GameUI {
                 
                 if (!this.game.players[this.game.activePlayerIndex].isAi) {
                     btn.onclick = () => {
+                        this.audio.playSelect();
                         if (this.game.selectIngredient(type)) this.updateUI();
                     };
                 }
@@ -175,7 +203,6 @@ class GameUI {
             }
         });
         
-        // Render selected cards below
         if (this.game.selectedCards.length > 0) {
              const selectedContainer = document.createElement('div');
              selectedContainer.style.width = '100%';
@@ -198,7 +225,10 @@ class GameUI {
             
             const opponent = this.game.players[1 - this.game.activePlayerIndex];
             if (!opponent.isAi) {
-                btn.onclick = () => this.choosePotion(idx);
+                btn.onclick = () => {
+                    this.audio.playClick();
+                    this.choosePotion(idx);
+                };
             }
             choices.appendChild(btn);
         });
@@ -206,8 +236,6 @@ class GameUI {
 
     choosePotion(index) {
         const results = this.game.resolvePotion(index);
-        
-        // Results is array: [0] = chooser's effect, [1] = brewer's effect
         const chooserResult = results[0];
         const brewerResult = results[1];
         
@@ -217,24 +245,30 @@ class GameUI {
         this.log(`${chooserName} drinks Potion ${index === 0 ? 'A' : 'B'}.`);
         this.log(`Revealed: Potion A (${this.game.brewedPotions[0].join('+')}), Potion B (${this.game.brewedPotions[1].join('+')})`);
         
-        // Helper to process effect
+        let delayedResolution = 1500;
+        
         const applyEffectVisuals = (effect, target) => {
             if (effect.kind === 'damage') {
-                this.log(`${this.game.players[target].name} suffers ${effect.amount} damage from ${effect.label}!`, 'fire');
+                this.audio.playDamage();
+                this.log(`${this.game.players[target].name} takes ${effect.amount} damage from ${effect.label}!`, 'fire');
                 this.flashScreen('red');
                 this.shakeCamera();
                 this.spawnParticles('fire', target);
             } else if (effect.kind === 'heal') {
+                this.audio.playHeal();
                 this.log(`${this.game.players[target].name} heals ${effect.amount} from ${effect.label}.`, 'heal');
                 this.flashScreen('cyan');
                 this.spawnParticles('heal', target);
             } else if (effect.kind === 'random_heal') {
+                this.audio.playHeal();
                 this.log(`Random heal from ${effect.label} triggers!`, 'chaos');
             } else if (effect.kind === 'random_damage') {
+                this.audio.playDamage();
                 this.log(`Random damage from ${effect.label} triggers!`, 'chaos');
                 this.shakeCamera();
             } else if (effect.kind === 'chaos_chaos') {
                 this.triggerChaos();
+                delayedResolution += 5500; // Wait for wheel spin
             } else {
                 this.log(`${effect.label} fizzles out.`);
             }
@@ -246,16 +280,18 @@ class GameUI {
         setTimeout(() => {
              const simultaneousDeath = this.game.applyResolution(results);
              if (simultaneousDeath) {
+                 this.audio.playHeal();
                  this.log("MUTUAL DESTRUCTION PREVENTED! Both players collapsed, but recover their lost life.", 'shield');
                  this.flashScreen('gold');
              } else {
                  this.log(`Round ended. ${brewerName} refilled 2 random cards.`);
              }
              this.updateUI();
-        }, 1500);
+        }, delayedResolution);
     }
 
     triggerChaos() {
+        this.audio.playChaos();
         const overlay = document.getElementById('chaos-wheel-overlay');
         overlay.classList.remove('hidden');
         
@@ -264,23 +300,35 @@ class GameUI {
         canvas.width = 500;
         canvas.height = 500;
         
-        const outcomes = ["HP SWAP", "TEAM DMG 2", "TEAM TOXIC 1", "ALCHEMIST GIFT", "STEAL CARD", "MIRACLE 3"];
-        const colors = ["#9933cc", "#cc0000", "#44cc44", "#d4d4d4", "#666666", "#33cccc"];
+        // 8 Outcomes matching Python logic (Target: Player 1 or 2. Effect: -1, +1, -2, 0)
+        // 0: P1 -1, 1: P2 -1, 2: P1 +1, 3: P2 +1, 4: P1 -2, 5: P2 -2, 6: Sparkles, 7: Sparkles
+        const outcomes = ["P1 DMG 1", "P2 DMG 1", "P1 HEAL 1", "P2 HEAL 1", "P1 DMG 2", "P2 DMG 2", "SPARKLE", "SPARKLE"];
+        const colors = ["#cc0000", "#cc0000", "#33cccc", "#33cccc", "#880000", "#880000", "#d4d4d4", "#d4d4d4"];
         
-        const finalOutcome = Math.floor(Math.random() * 6);
+        const finalOutcome = Math.floor(Math.random() * 8);
+        document.getElementById('chaos-status').textContent = "CHAOS MANIFESTS";
+        
         let rotation = 0;
-        const totalSpins = 5 + Math.random() * 5;
-        const targetRotation = totalSpins * Math.PI * 2 + (finalOutcome * (Math.PI * 2 / 6));
+        const totalSpins = 4 + Math.random() * 2;
+        const targetRotation = totalSpins * Math.PI * 2 + (finalOutcome * (Math.PI * 2 / 8));
+        
+        // Execute the mathematical result preemptively locally without resolving (will be drawn next updateHUD)
+        const isPlayer1 = (finalOutcome % 2 === 0);
+        const target = isPlayer1 ? 0 : 1;
+        
+        if (finalOutcome <= 1) this.game.dealDamage(target, 1);
+        else if (finalOutcome <= 3) this.game.healPlayer(target, 1);
+        else if (finalOutcome <= 5) this.game.dealDamage(target, 2);
         
         const drawWheel = (angle) => {
             ctx.clearRect(0, 0, 500, 500);
-            const sliceAngle = (Math.PI * 2) / 6;
+            const sliceAngle = (Math.PI * 2) / 8;
             
             ctx.save();
             ctx.translate(250, 250);
             ctx.rotate(angle);
             
-            for (let i = 0; i < 6; i++) {
+            for (let i = 0; i < 8; i++) {
                 ctx.beginPath();
                 ctx.moveTo(0, 0);
                 ctx.arc(0, 0, 240, i * sliceAngle, (i + 1) * sliceAngle);
@@ -293,28 +341,39 @@ class GameUI {
                 ctx.fillStyle = "white";
                 ctx.font = "bold 14px Inter";
                 ctx.rotate(i * sliceAngle + sliceAngle/2);
-                ctx.fillText(outcomes[i], 100, 5);
+                ctx.fillText(outcomes[i], 120, 5);
                 ctx.rotate(-(i * sliceAngle + sliceAngle/2));
             }
             ctx.restore();
         };
 
+        let lastTick = 0;
         const animate = () => {
             if (rotation < targetRotation) {
                 const diff = targetRotation - rotation;
-                rotation += Math.max(0.01, diff * 0.05);
+                const speed = Math.max(0.005, diff * 0.05);
+                rotation += speed;
                 drawWheel(-rotation - Math.PI/2);
+                
+                if (Math.floor(rotation / (Math.PI/4)) > lastTick) {
+                    this.audio.playTick();
+                    lastTick = Math.floor(rotation / (Math.PI/4));
+                }
+                
                 requestAnimationFrame(animate);
             } else {
                 this.flashScreen(colors[finalOutcome]);
                 document.getElementById('chaos-status').textContent = outcomes[finalOutcome];
+                if (finalOutcome <= 1 || (finalOutcome >= 4 && finalOutcome <= 5)) {
+                    this.audio.playDamage();
+                    this.shakeCamera();
+                } else if (finalOutcome <= 3) {
+                    this.audio.playHeal();
+                }
                 setTimeout(() => {
                     overlay.classList.add('hidden');
-                    this.log(`Chaos Wheel triggered: ${outcomes[finalOutcome]}`, 'chaos');
-                    // Generic chaos applies 1 dmg locally just to show effect
-                    this.game.dealDamage(0, 1);
-                    this.game.dealDamage(1, 1);
-                    this.shakeCamera();
+                    this.log(`Chaos resolves: ${outcomes[finalOutcome]}`, 'chaos');
+                    this.updateHUD(); // Sync newly taken chaos rules
                 }, 2000);
             }
         };
