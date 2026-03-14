@@ -1,0 +1,322 @@
+:root {
+    --bg-void: #0a0a0a;
+    --bg-surface: rgba(26, 26, 26, 0.85);
+    --text-primary: #d4d4d4;
+    --text-muted: #666666;
+    --fire-color: #cc0000;
+    --poison-color: #44cc44;
+    --heal-color: #33cccc;
+    --chaos-color: #9933cc;
+    --shield-color: #ccaa33;
+    --font-ui: 'Inter', sans-serif;
+    --font-themed: 'Almendra', serif;
+}
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+    user-select: none;
+}
+
+body {
+    background-color: var(--bg-void);
+    color: var(--text-primary);
+    font-family: var(--font-ui);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+}
+
+#game-container {
+    position: relative;
+    width: 100%;
+    height: 100%;
+}
+
+#bg-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    z-index: 1;
+}
+
+#ui-overlay {
+    position: relative;
+    z-index: 10;
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    padding: 2rem;
+    pointer-events: none; /* Let clicks pass to 3D scene if needed, but we'll enable on specific elements */
+}
+
+/* Header & HUD */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    height: 100px;
+}
+
+.player-hud {
+    width: 300px;
+}
+
+.player-name {
+    display: block;
+    text-align: center;
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    margin-bottom: 0.5rem;
+    letter-spacing: 2px;
+}
+
+.hp-bar-container {
+    position: relative;
+    height: 40px;
+    background: var(--bg-void);
+    border: 2px solid var(--text-muted);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.hp-bar {
+    height: 100%;
+    width: 100%;
+    background-color: var(--heal-color);
+    transition: width 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275), background-color 0.3s;
+}
+
+.hp-text {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-weight: bold;
+    font-size: 1.2rem;
+    color: white;
+    text-shadow: 2px 2px 0px black;
+}
+
+.game-title {
+    font-family: var(--font-themed);
+    font-size: 2.5rem;
+    color: var(--text-primary);
+    text-shadow: 0 4px 10px rgba(0,0,0,1), 0 0 20px var(--fire-color);
+    letter-spacing: 4px;
+}
+
+/* Main Area */
+#interaction-area {
+    flex-grow: 1;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+#center-panel {
+    background: var(--bg-surface);
+    border: 1px solid var(--text-muted);
+    border-radius: 12px;
+    padding: 3rem;
+    width: 800px;
+    text-align: center;
+    backdrop-filter: blur(8px);
+    pointer-events: auto;
+    box-shadow: 0 10px 40px rgba(0,0,0,0.5);
+}
+
+#instructions {
+    font-family: var(--font-themed);
+    font-size: 2rem;
+    margin-bottom: 2rem;
+    color: var(--text-primary);
+}
+
+#controls {
+    display: flex;
+    justify-content: center;
+    gap: 1.5rem;
+    margin-top: 2rem;
+}
+
+button {
+    padding: 1rem 3rem;
+    font-size: 1.2rem;
+    font-family: var(--font-ui);
+    font-weight: bold;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+    border: 2px solid transparent;
+}
+
+.btn-primary {
+    background: rgba(204, 0, 0, 0.2);
+    border-color: var(--fire-color);
+    color: white;
+}
+
+.btn-primary:hover {
+    background: var(--fire-color);
+    box-shadow: 0 0 20px var(--fire-color);
+}
+
+.btn-secondary {
+    background: transparent;
+    border-color: var(--text-muted);
+    color: var(--text-muted);
+}
+
+.btn-secondary:hover {
+    color: white;
+    border-color: white;
+}
+
+/* Log Area */
+footer {
+    height: 140px;
+    display: flex;
+    justify-content: center;
+}
+
+#game-log {
+    width: 100%;
+    max-width: 900px;
+    background: var(--bg-void);
+    border: 1px solid var(--text-muted);
+    padding: 1rem;
+    overflow-y: hidden;
+    font-size: 0.95rem;
+}
+
+#log-content div {
+    margin-bottom: 4px;
+    animation: fadeIn 0.3s ease-out;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Ingredient Shelf & Potion Choices */
+#ingredient-shelf, #potion-choices {
+    display: flex;
+    justify-content: center;
+    gap: 1rem;
+    margin-bottom: 2rem;
+    flex-wrap: wrap;
+}
+
+.ingredient-card, .potion-card {
+    width: 140px;
+    height: 180px;
+    background: var(--bg-void);
+    border: 2px solid var(--text-muted);
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    color: white;
+    text-align: center;
+    padding: 1rem;
+}
+
+.ingredient-card:hover {
+    transform: translateY(-10px) scale(1.05);
+    box-shadow: 0 10px 20px rgba(0,0,0,0.5);
+}
+
+.ingredient-card.selected {
+    opacity: 0.3;
+    pointer-events: none;
+    transform: scale(0.9);
+}
+
+.potion-card {
+    width: 200px;
+    height: 280px;
+    border-color: var(--text-muted);
+    font-size: 1.5rem;
+    font-family: var(--font-themed);
+}
+
+.potion-card:hover {
+    border-color: white;
+    box-shadow: 0 0 30px rgba(255,255,255,0.2);
+    transform: scale(1.05);
+}
+
+/* Chaos Wheel Overlay */
+#chaos-wheel-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 200;
+    background: rgba(0,0,0,0.9);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    backdrop-filter: blur(10px);
+}
+
+#wheel-container {
+    position: relative;
+    width: 500px;
+    height: 500px;
+}
+
+#wheel-canvas {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    box-shadow: 0 0 50px var(--chaos-color);
+}
+
+#wheel-pointer {
+    position: absolute;
+    top: -20px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 20px solid transparent;
+    border-right: 20px solid transparent;
+    border-top: 40px solid white;
+    z-index: 210;
+}
+
+#chaos-status {
+    margin-top: 3rem;
+    font-family: var(--font-themed);
+    font-size: 3rem;
+    color: var(--chaos-color);
+    letter-spacing: 5px;
+}
+
+@keyframes shake {
+    0% { transform: translate(1px, 1px) rotate(0deg); }
+    10% { transform: translate(-1px, -2px) rotate(-1deg); }
+    20% { transform: translate(-3px, 0px) rotate(1deg); }
+    30% { transform: translate(3px, 2px) rotate(0deg); }
+    40% { transform: translate(1px, -1px) rotate(1deg); }
+    50% { transform: translate(-1px, 2px) rotate(-1deg); }
+    60% { transform: translate(-3px, 1px) rotate(0deg); }
+    70% { transform: translate(3px, 1px) rotate(-1deg); }
+    80% { transform: translate(-1px, -1px) rotate(1deg); }
+    90% { transform: translate(1px, 2px) rotate(0deg); }
+    100% { transform: translate(1px, -2px) rotate(-1deg); }
+}
+
+.shake {
+    animation: shake 0.5s;
+    animation-iteration-count: infinite;
+}

@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Potions Roulette - Dark Alchemy</title>
+    <link rel="stylesheet" href="src/style.css">
+    <!-- Google Fonts: Inter for UI, Almendra for themed text -->
+    <link href="https://fonts.googleapis.com/css2?family=Almendra:wght@400;700&family=Inter:wght@300;400;700&display=swap" rel="stylesheet">
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+    <div id="game-container">
+        <!-- Three.js Canvas will be injected here -->
+        <canvas id="bg-canvas"></canvas>
+
+        <!-- UI Layer -->
+        <div id="ui-overlay">
+            <header>
+                <div class="player-hud" id="player1-hud">
+                    <span class="player-name">PLAYER 1</span>
+                    <div class="hp-bar-container">
+                        <div class="hp-bar" id="p1-hp-fill"></div>
+                        <span class="hp-text" id="p1-hp-text">10 / 10</span>
+                    </div>
+                </div>
+
+                <h1 class="game-title">POTIONS ROULETTE</h1>
+
+                <div class="player-hud" id="player2-hud">
+                    <span class="player-name">PLAYER 2</span>
+                    <div class="hp-bar-container">
+                        <div class="hp-bar" id="p2-hp-fill"></div>
+                        <span class="hp-text" id="p2-hp-text">10 / 10</span>
+                    </div>
+                </div>
+            </header>
+
+            <main id="interaction-area">
+                <div id="center-panel">
+                    <h2 id="instructions">PREPARE YOURSELF</h2>
+                    <div id="ingredient-shelf" class="hidden"></div>
+                    <div id="potion-choices" class="hidden"></div>
+                    
+                    <div id="controls">
+                        <button id="primary-btn" class="btn-primary">START GAME</button>
+                        <button id="secondary-btn" class="btn-secondary hidden">RESET</button>
+                    </div>
+                </div>
+            </main>
+
+            <footer>
+                <div id="game-log">
+                    <div id="log-content"></div>
+                </div>
+            </footer>
+        </div>
+
+        <!-- Chaos Wheel Overlay -->
+        <div id="chaos-wheel-overlay" class="hidden">
+            <div id="wheel-container">
+                <canvas id="wheel-canvas"></canvas>
+                <div id="wheel-pointer"></div>
+            </div>
+            <h2 id="chaos-status">CHAOS MANIFESTS</h2>
+        </div>
+        
+        <!-- Screen Flash Overlay -->
+        <div id="screen-flash"></div>
+    </div>
+
+    <script type="module" src="src/main.js"></script>
+</body>
+</html>
