@@ -101,12 +101,48 @@ export class GameState {
         const chosenPotion = this.brewedPotions[chosenIndex];
         const otherPotion = this.brewedPotions[1 - chosenIndex];
         
+        let effect1 = this.evaluatePotion(chosenPotion);
+        let effect2 = this.evaluatePotion(otherPotion);
+
+        const synergy = this.checkSynergy(effect1, effect2);
+        if (synergy) {
+            effect1 = synergy.drinkerEffect;
+            effect2 = synergy.brewerEffect;
+        }
+
         const results = [
-            { target: drinkerIndex, potion: chosenPotion, effect: this.evaluatePotion(chosenPotion) },
-            { target: brewerIndex, potion: otherPotion, effect: this.evaluatePotion(otherPotion) }
+            { target: drinkerIndex, potion: chosenPotion, effect: effect1 },
+            { target: brewerIndex, potion: otherPotion, effect: effect2 }
         ];
 
         return results; // main.js processes UI and then calls applyResolution
+    }
+
+    checkSynergy(effectA, effectB) {
+        const typeA = effectA.kind;
+        const typeB = effectB.kind;
+        
+        // Toxic Blast: Both are raw damage. Combines and hits both players.
+        if (typeA === 'damage' && typeB === 'damage') {
+             const totalDamage = effectA.amount + effectB.amount;
+             const synergyEffect = { kind: 'damage', amount: totalDamage, label: "Toxic Blast Synergy!" };
+             return { drinkerEffect: synergyEffect, brewerEffect: synergyEffect };
+        }
+        
+        // Pure Miracle: Both are raw heals. Amplifies the heal for both.
+        if (typeA === 'heal' && typeB === 'heal') {
+             const totalHeal = effectA.amount + effectB.amount + 2;
+             const synergyEffect = { kind: 'heal', amount: totalHeal, label: "Pure Miracle Synergy!" };
+             return { drinkerEffect: synergyEffect, brewerEffect: synergyEffect };
+        }
+        
+        // Alchemical Equilibrium: Damage meets Heal. Neutralizes into a small heal for both.
+        if ((typeA === 'damage' && typeB === 'heal') || (typeA === 'heal' && typeB === 'damage')) {
+             const synergyEffect = { kind: 'heal', amount: 1, label: "Alchemical Equilibrium" };
+             return { drinkerEffect: synergyEffect, brewerEffect: synergyEffect };
+        }
+        
+        return null;
     }
 
     applyResolution(results) {

@@ -78,11 +78,13 @@ class GameUI {
 
     initUI() {
         this.primaryBtn = document.getElementById('primary-btn');
+        this.onlineBtn = document.getElementById('online-btn');
         this.secondaryBtn = document.getElementById('secondary-btn');
         this.instructions = document.getElementById('instructions');
         this.logContent = document.getElementById('log-content');
         
         this.primaryBtn.addEventListener('click', () => { this.audio.playClick(); this.handlePrimaryAction(); });
+        this.onlineBtn.addEventListener('click', () => { this.audio.playSelect(); this.startOnlineMatch(); });
         this.secondaryBtn.addEventListener('click', () => {
              this.audio.playClick();
              this.game.selectedCards = [];
@@ -93,6 +95,11 @@ class GameUI {
     }
 
     handlePrimaryAction() {
+        if (!this.isOfflineInit) {
+            this.isOfflineInit = true; // Started local mode
+            this.onlineBtn.classList.add('hidden');
+        }
+
         if (this.game.players[this.game.activePlayerIndex].isAi && this.game.phase !== Phase.CHOOSE) return;
         
         switch(this.game.phase) {
@@ -102,6 +109,15 @@ class GameUI {
             case Phase.CRAFT:
                 if (this.game.lockPotions()) {
                     this.log(`${this.game.players[this.game.activePlayerIndex].name} brewed two concoctions.`);
+                    
+                    if (this.isOnline && this.ws) {
+                        this.ws.send(JSON.stringify({ type: 'action', action: 'LOCK_POTION', playerId: this.localPlayerId, payload: this.game.brewedPotions }));
+                        this.instructions.textContent = "WAITING ON OPPONENT";
+                        this.primaryBtn.classList.add('hidden');
+                        this.secondaryBtn.classList.add('hidden');
+                        document.getElementById('ingredient-shelf').classList.add('hidden');
+                        return; // Halt local UI progression until network replies
+                    }
                     this.updateUI();
                 }
                 break;
@@ -112,7 +128,128 @@ class GameUI {
             case Phase.GAME_OVER:
                 this.game.resetMatch();
                 this.updateUI();
+                if (this.isOnline) this.onlineBtn.classList.remove('hidden');
                 break;
+        }
+    }
+
+    async startOnlineMatch() {
+        this.isOnline = true;
+        this.onlineBtn.classList.add('hidden');
+        this.primaryBtn.classList.add('hidden');
+        this.instructions.textContent = "FINDING MATCH...";
+        
+        try {
+            const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            const response = await fetch('/api/matchmake');
+            if (!response.ok) throw new Error("Matchmaking failed");
+            
+            const data = await response.json();
+            const wsUrl = `${wsProtocol}//${window.location.host}/api/room/${data.roomId}`;
+            
+            this.ws = new WebSocket(wsUrl);
+            
+            this.ws.onopen = () => {
+                this.log(`Connected to Edge Node [${data.roomId}]`, "heal");
+                this.instructions.textContent = "WAITING FOR P2...";
+            };
+            
+            this.ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                this.handleNetworkMessage(msg);
+            };
+            
+            this.ws.onclose = () => this.log(`Disconnected from Edge server.`, "fire");
+            this.ws.onerror = () => this.log(`Network error occurred.`, "fire");
+            
+        } catch(e) {
+            // Local fallback simulation (for dev without running Wrangler)
+            this.log(`Cloudflare unreachable. Simulating edge match...`);
+            setTimeout(() => {
+                this.log(`Local Dev Match found! You are P1 against Network P2.`, "heal");
+                this.game.players[1].isAi = false;
+                this.game.players[1].name = "Network P2";
+                this.localPlayerId = 0;
+                this.startTurn();
+            }, 1000);
+        }
+    }
+
+    handleNetworkMessage(msg) {
+        if(msg.type === 'connected') {
+            this.localPlayerId = msg.playerId;
+            this.log(`Joined as Player ${this.localPlayerId + 1}`, "heal");
+            if (msg.playerId === 1) { // P2 joined
+                this.game.players[1].isAi = false;
+                this.startTurn();
+            }
+        }
+        else if(msg.type === 'action') {
+            if (msg.action === 'LOCK_POTION' && msg.playerId !== this.localPlayerId) {
+                this.log(`Opponent locked their potions.`);
+            }
+        }
+        else if (msg.type === 'resolution') {
+            this.log(`Potions sealed! Resolving round...`, "chaos");
+            this.game.brewedPotions = msg.brewedPotions;
+            
+            const results = msg.results;
+            const chooserResult = results[0];
+            const brewerResult = results[1];
+            
+            let delayedResolution = 1500;
+            
+            const applyEffectVisuals = (effect, target) => {
+                if (effect.kind === 'damage') {
+                    this.audio.playDamage();
+                    this.log(`${this.game.players[target].name} takes ${effect.amount} damage from ${effect.label}!`, 'fire');
+                    this.flashScreen('red');
+                    this.shakeCamera();
+                    this.spawnParticles('fire', target);
+                } else if (effect.kind === 'heal') {
+                    this.audio.playHeal();
+                    this.log(`${this.game.players[target].name} heals ${effect.amount} from ${effect.label}.`, 'heal');
+                    this.flashScreen('cyan');
+                    this.spawnParticles('heal', target);
+                } else if (effect.kind === 'random_heal') {
+                    this.audio.playHeal();
+                    this.log(`Random heal from ${effect.label} triggers!`, 'chaos');
+                } else if (effect.kind === 'random_damage') {
+                    this.audio.playDamage();
+                    this.log(`Random damage from ${effect.label} triggers!`, 'chaos');
+                    this.shakeCamera();
+                } else if (effect.kind === 'chaos_chaos') {
+                    this.triggerChaos();
+                    delayedResolution += 5500; 
+                } else {
+                    this.log(`${effect.label} fizzles out.`);
+                }
+            };
+
+            applyEffectVisuals(chooserResult.effect, chooserResult.target);
+            applyEffectVisuals(brewerResult.effect, brewerResult.target);
+            
+            setTimeout(() => {
+                 this.game.players[0].hp = msg.newState.p1_hp;
+                 this.game.players[1].hp = msg.newState.p2_hp;
+                 this.game.players[0].hand = msg.newState.p1_hand;
+                 this.game.players[1].hand = msg.newState.p2_hand;
+                 this.game.winner = msg.newState.winner;
+                 
+                 if (msg.simultaneousDeath) {
+                     this.audio.playHeal();
+                     this.log("MUTUAL DESTRUCTION PREVENTED! Both players collapsed, but recover their lost life.", 'shield');
+                     this.flashScreen('gold');
+                 }
+                 
+                 if (this.game.winner) {
+                     this.game.phase = Phase.GAME_OVER;
+                 } else {
+                     this.game.phase = Phase.PASS_TO_ACTIVE;
+                     this.game.selectedCards = [];
+                 }
+                 this.updateUI();
+            }, delayedResolution);
         }
     }
 
