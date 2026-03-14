@@ -1,0 +1,8 @@
+name = "potions-roulette-web"
+pages_build_output_dir = "dist"
+compatibility_date = "2024-03-14"
+
+# Build configuration for Cloudflare Pages
+[build]
+command = "npm run build"
+watch_dir = "src"
